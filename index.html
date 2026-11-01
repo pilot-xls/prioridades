@@ -3,25 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111827">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self' https://api.github.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Prioridades">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Prioridades</title>
 <style>
   :root{
+    color-scheme:dark;
     --bg:#0f172a; --card:#1e293b; --card2:#273449; --txt:#f1f5f9; --mut:#94a3b8; --line:#334155;
-    --red:#ef4444; --blue:#3b82f6; --amber:#f59e0b; --grey:#64748b; --ok:#22c55e;
+    --red:#ef4444; --blue:#3b82f6; --amber:#f59e0b; --grey:#64748b; --ok:#22c55e; --link:#93c5fd;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  :focus-visible{outline:2px solid var(--link);outline-offset:2px}
   html,body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
   body{padding:env(safe-area-inset-top) 0 calc(90px + env(safe-area-inset-bottom))}
-  header{padding:16px 16px 4px;display:flex;justify-content:space-between;align-items:center}
+  header{padding:16px 16px 4px;display:flex;justify-content:space-between;align-items:center;max-width:720px;margin:0 auto}
   h1{font-size:22px;margin:0}
-  .sub{color:var(--mut);font-size:13px;padding:0 16px 8px}
+  .sub{color:var(--mut);font-size:13px;padding:0 16px 8px;max-width:720px;margin:0 auto}
   main{padding:0 12px;max-width:720px;margin:0 auto}
   section{margin:14px 0}
   .sh{display:flex;align-items:center;gap:8px;padding:6px 4px}
@@ -29,37 +34,57 @@
   .sh h2{font-size:15px;margin:0;flex:1}
   .sh small{color:var(--mut);font-size:12px}
   .hint{color:var(--mut);font-size:12.5px;padding:0 4px 6px}
-  .item{background:var(--card);border-left:4px solid var(--c);border-radius:10px;padding:10px 12px;margin:8px 0;display:flex;gap:10px;align-items:flex-start}
-  .item .chk{width:24px;height:24px;border-radius:50%;border:2px solid var(--mut);background:none;flex:none;margin-top:1px;color:#fff;font-size:14px;cursor:pointer}
-  .item .body{flex:1;min-width:0;cursor:pointer}
+  .welcome{background:var(--card);border-radius:10px;padding:12px 14px;margin:12px 0 4px;color:var(--mut);font-size:14px}
+  .welcome b{color:var(--txt)}
+  .item{background:var(--card);border-left:4px solid var(--c);border-radius:10px;padding:10px 12px 10px 2px;margin:8px 0;display:flex;gap:4px;align-items:flex-start}
+  .chk{width:44px;height:44px;flex:none;margin:-11px 0 -11px 0;display:grid;place-items:center;background:none;border:0;padding:0;cursor:pointer;color:#fff;border-radius:50%}
+  .chk .ring{width:24px;height:24px;border-radius:50%;border:2px solid var(--mut);display:grid;place-items:center;font-size:14px;line-height:1;transition:border-color .15s,background .15s}
+  .chk:hover .ring,.chk:active .ring{border-color:var(--c)}
+  .chk.on .ring{background:var(--ok);border-color:var(--ok)}
+  .item .body{flex:1;min-width:0;cursor:pointer;border-radius:6px}
   .item .t{font-weight:600;word-break:break-word}
   .item .m{font-size:12.5px;color:var(--mut);margin-top:2px;word-break:break-word}
   .tag{display:inline-block;font-size:11.5px;border-radius:99px;padding:1px 8px;background:var(--card2);color:var(--txt);margin-right:4px}
   .late{color:var(--red);font-weight:600}
   .empty{color:var(--mut);font-size:13px;padding:6px 4px;font-style:italic}
   details.done{margin-top:20px;color:var(--mut)}
+  details.done summary{cursor:pointer;padding:6px 4px}
+  details.done summary small{font-size:12px}
   details.done .item{opacity:.55}
   details.done .item .t{text-decoration:line-through}
   .fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom));width:60px;height:60px;border-radius:50%;border:0;background:var(--blue);color:#fff;font-size:32px;box-shadow:0 6px 18px #0008;cursor:pointer}
-  .iconbtn{background:var(--card);border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:8px 12px;font-size:14px;cursor:pointer}
-  /* sheet */
-  dialog{border:0;border-radius:18px 18px 0 0;background:var(--card);color:var(--txt);width:100%;max-width:560px;margin:auto auto 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:92vh;overflow:auto}
+  .iconbtn{background:var(--card);border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:8px 12px;font-size:14px;cursor:pointer;min-width:44px;min-height:40px}
+  /* painel inferior */
+  dialog{border:0;border-radius:18px 18px 0 0;background:var(--card);color:var(--txt);width:100%;max-width:560px;margin:auto auto 0;padding:0;max-height:92vh;max-height:92dvh;overflow:auto;overscroll-behavior:contain}
   dialog::backdrop{background:#000a}
+  .sheet{padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+  .sheet-h{font-size:17px;margin:0;outline:none}
   label{display:block;font-weight:600;margin:14px 0 6px;font-size:14.5px}
   label span{display:block;font-weight:400;color:var(--mut);font-size:12.5px}
-  input[type=text],input[type=date],input[type=number],textarea{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit}
+  input[type=text],input[type=password],input[type=date],input[type=number],textarea{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit;margin-top:4px}
+  @supports (-webkit-touch-callout:none){ /* iOS: campo de data vazio fica sem altura */
+    input[type=date]{-webkit-appearance:none;appearance:none;min-height:46px;text-align:left}
+    input[type=date]::-webkit-date-and-time-value{text-align:left}
+  }
   textarea{min-height:64px;resize:vertical}
-  .seg{display:flex;gap:8px}
+  label.chkrow{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:start;cursor:pointer}
+  label.chkrow input{grid-row:span 2;width:22px;height:22px;margin:0;accent-color:var(--blue)}
+  .seg{display:flex;gap:8px;border-radius:12px}
+  .seg.need{outline:2px solid var(--red);outline-offset:3px}
   .seg button{flex:1;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--txt);font:inherit;cursor:pointer}
   .seg button.on{background:var(--blue);border-color:var(--blue);font-weight:700}
+  .link{background:none;border:0;color:var(--link);text-decoration:underline;font:inherit;padding:0;cursor:pointer}
   .res{margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--bg);border-left:4px solid var(--c);font-size:14px}
   .row{display:flex;gap:8px;margin-top:16px}
   .btn{flex:1;padding:13px;border-radius:10px;border:0;font:inherit;font-weight:700;cursor:pointer;background:var(--blue);color:#fff}
   .btn.sec{background:var(--card2);color:var(--txt)}
   .btn.danger{background:#7f1d1d}
   .ok{color:var(--ok)} .bad{color:var(--red)}
-  .hide{display:none}
-  .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#000d;color:#fff;padding:8px 14px;border-radius:99px;font-size:13px;z-index:99}
+  .hide{display:none!important}
+  hr{border:0;border-top:1px solid var(--line);margin:18px 0 0}
+  .toast{position:fixed;left:50%;width:max-content;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#020617;border:1px solid var(--line);color:#fff;padding:9px 16px;border-radius:99px;font-size:14px;z-index:99;display:flex;align-items:center;gap:6px;max-width:calc(100% - 32px);box-shadow:0 6px 18px #0008}
+  .toast.act{padding:3px 4px 3px 16px}
+  .toast button{background:none;border:0;color:var(--link);font:inherit;font-weight:700;padding:9px 12px;border-radius:99px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -67,7 +92,7 @@
   <h1>Prioridades</h1>
   <div style="display:flex;gap:8px">
     <button class="iconbtn" id="btnSync" aria-label="Sincronizar">☁</button>
-    <button class="iconbtn" id="btnMenu" aria-label="Menu">⋯</button>
+    <button class="iconbtn" id="btnMenu" aria-label="Definições">⋯</button>
   </div>
 </header>
 <div class="sub">Urgência × Importância → ação</div>
@@ -77,8 +102,9 @@
 <button class="fab" id="btnAdd" aria-label="Adicionar">+</button>
 
 <!-- Formulário -->
-<dialog id="dlg">
-  <form method="dialog" id="form" autocomplete="off">
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <form id="form" class="sheet" autocomplete="off">
+    <h2 id="dlgTitle" class="sheet-h" tabindex="-1">Nova entrada</h2>
     <label>O que é? <span>Tarefa, objetivo ou ideia</span>
       <input type="text" id="fTitle" required maxlength="200" placeholder="Ex.: Renovar seguro do carro">
     </label>
@@ -86,23 +112,28 @@
     <label>1 · Urgência — qual é a data limite para resolver?
       <input type="date" id="fDate">
     </label>
-    <div class="seg" id="segU">
-      <button type="button" data-v="0">0 · Pouca</button>
-      <button type="button" data-v="1">1 · Muita</button>
+    <div class="seg" id="segU" role="group" aria-label="Urgência">
+      <button type="button" data-v="0" aria-pressed="false">0 · Pouca</button>
+      <button type="button" data-v="1" aria-pressed="false">1 · Muita</button>
     </div>
-    <div class="hint" id="uHint" style="padding-top:6px"></div>
+    <div class="hint" style="padding-top:6px"><span id="uHint"></span> <button type="button" class="link hide" id="uAuto">Usar a data</button></div>
 
     <label>2 · Importância — qual é o teu objetivo, meta ou resultado futuro com isto?
-      <textarea id="fGoal" placeholder="Que resultado queres alcançar?"></textarea>
+      <textarea id="fGoal" maxlength="2000" placeholder="Que resultado queres alcançar?"></textarea>
     </label>
-    <div class="seg" id="segI">
-      <button type="button" data-v="0">0 · Pouca</button>
-      <button type="button" data-v="1">1 · Muita</button>
+    <div class="seg" id="segI" role="group" aria-label="Importância">
+      <button type="button" data-v="0" aria-pressed="false">0 · Pouca</button>
+      <button type="button" data-v="1" aria-pressed="false">1 · Muita</button>
     </div>
 
-    <div class="res" id="res"></div>
+    <div class="res" id="res" aria-live="polite"></div>
 
-    <div id="extra"></div>
+    <label id="wWho" class="hide">Delegar a quem? <span>Opcional</span>
+      <input type="text" id="fWho" maxlength="80">
+    </label>
+    <label id="wWhen" class="hide">Agendar para quando? <span>Opcional · nesse dia passa para "Fazer já"</span>
+      <input type="date" id="fWhen">
+    </label>
 
     <div class="row">
       <button type="button" class="btn sec" id="fCancel">Cancelar</button>
@@ -112,312 +143,45 @@
   </form>
 </dialog>
 
-<!-- Menu -->
-<dialog id="dlgMenu">
-  <label>Sincronizar com GitHub
-    <span>Repositório PRIVADO só para os dados: utilizador/nome</span>
-    <input type="text" id="gRepo" placeholder="utilizador/prioridades-dados" autocapitalize="off" autocorrect="off" spellcheck="false">
-  </label>
-  <label>Ficheiro
-    <input type="text" id="gPath" placeholder="tasks.json" autocapitalize="off" autocorrect="off" spellcheck="false">
-  </label>
-  <label>Token <span>Fine-grained, só neste repositório, Contents: Read and write</span>
-    <input type="password" id="gToken" placeholder="github_pat_…" autocomplete="off">
-  </label>
-  <div class="hint" id="gMsg"></div>
-  <div class="row">
-    <button class="btn" id="gSave">Ligar e sincronizar</button>
-    <button class="btn sec" id="gOff">Desligar</button>
+<!-- Definições -->
+<dialog id="dlgMenu" aria-labelledby="mTitle">
+  <div class="sheet">
+    <h2 id="mTitle" class="sheet-h" tabindex="-1">Definições</h2>
+    <label>Sincronizar com GitHub
+      <span>Repositório PRIVADO só para os dados: utilizador/nome</span>
+      <input type="text" id="gRepo" placeholder="utilizador/prioridades-dados" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </label>
+    <label>Ficheiro
+      <input type="text" id="gPath" placeholder="tasks.json" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </label>
+    <label>Token <span>Fine-grained, só neste repositório, Contents: Read and write</span>
+      <input type="password" id="gToken" placeholder="github_pat_…" autocomplete="off">
+    </label>
+    <div class="hint" id="gMsg" aria-live="polite"></div>
+    <div class="row">
+      <button type="button" class="btn" id="gSave">Ligar e sincronizar</button>
+      <button type="button" class="btn sec" id="gOff">Desligar</button>
+    </div>
+    <hr>
+    <label>Urgente se a data limite for dentro de (dias)
+      <span>Aplica-se logo a todas as tarefas com data e é sincronizado.</span>
+      <input type="number" id="sDays" min="0" max="365" inputmode="numeric">
+    </label>
+    <label class="chkrow hide" id="wBadge"><input type="checkbox" id="sBadge"> Número no ícone da app
+      <span>Mostra quantas tarefas tens em "Fazer já". No iPhone pede autorização de notificações.</span>
+    </label>
+    <div class="row">
+      <button type="button" class="btn sec" id="bExport">Exportar cópia</button>
+      <button type="button" class="btn sec" id="bImport">Importar</button>
+    </div>
+    <div class="row">
+      <button type="button" class="btn sec" id="bClose">Fechar</button>
+    </div>
+    <input type="file" id="fileIn" accept=".json,application/json" class="hide">
+    <p class="hint" id="mFoot" style="margin-top:14px"></p>
   </div>
-  <hr style="border:0;border-top:1px solid var(--line);margin:18px 0 0">
-  <label>Urgente se a data limite for dentro de (dias)
-    <input type="number" id="sDays" min="0" max="365">
-  </label>
-  <div class="row">
-    <button class="btn sec" id="bExport">Exportar cópia</button>
-    <button class="btn sec" id="bImport">Importar</button>
-  </div>
-  <div class="row">
-    <button class="btn sec" id="bClose">Fechar</button>
-  </div>
-  <input type="file" id="fileIn" accept="application/json" class="hide">
-  <p class="hint" style="margin-top:14px">Os dados ficam só neste dispositivo. Usa "Exportar cópia" para guardares uma cópia de segurança.</p>
 </dialog>
 
-<script>
-"use strict";
-const KEY = "prioridades.v1";
-const Q = {
-  now:      {n:"Fazer já",        c:"#ef4444", hint:"Urgente + importante. Faz isto primeiro."},
-  schedule: {n:"Agendar",         c:"#3b82f6", hint:"Importante, sem pressa. Marca quando o vais fazer."},
-  delegate: {n:"Delegar",         c:"#f59e0b", hint:"Urgente, mas pouco importante. Passa a alguém."},
-  drop:     {n:"Eliminar / sem ação", c:"#64748b", hint:"Nem urgente nem importante. Elimina ou deixa sem ação."}
-};
-const ORDER = ["now","schedule","delegate","drop"];
-
-let state = load();
-let editId = null;
-let form = {u:0, i:0, uManual:false};
-
-function load(){
-  try{
-    const s = JSON.parse(localStorage.getItem(KEY));
-    if(s && Array.isArray(s.items)){ s.items.forEach(x=>{ if(!x.upd) x.upd = x.created||0; }); return Object.assign({days:7}, s); }
-  }catch(e){}
-  return {items:[], days:7};
-}
-function save(noSync){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){ toast("Não foi possível guardar"); } if(!noSync) scheduleSync(); }
-const $ = id => document.getElementById(id);
-const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-
-function quad(u,i){
-  if(u && i) return "now";
-  if(u && !i) return "delegate";
-  if(!u && i) return "schedule";
-  return "drop";
-}
-function today(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
-function daysTo(s){ if(!s) return null; const [y,m,d]=s.split("-").map(Number); return Math.round((new Date(y,m-1,d)-today())/864e5); }
-function autoU(s){ const n=daysTo(s); return n!==null && n<=state.days ? 1 : 0; }
-function fmtDate(s){ if(!s) return ""; const [y,m,d]=s.split("-"); return `${d}/${m}/${y}`; }
-function esc(s){ return (s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function dueLabel(s){
-  const n=daysTo(s); if(n===null) return "";
-  if(n<0) return `<span class="late">atrasada ${-n}d · ${fmtDate(s)}</span>`;
-  if(n===0) return `<span class="late">hoje</span>`;
-  if(n===1) return `amanhã · ${fmtDate(s)}`;
-  return `${fmtDate(s)} (${n}d)`;
-}
-function toast(t){ const e=document.createElement("div"); e.className="toast"; e.textContent=t; document.body.appendChild(e); setTimeout(()=>e.remove(),2200); }
-
-function render(){
-  const app = $("app");
-  const live = state.items.filter(x=>!x.deleted);
-  const open = live.filter(x=>!x.done);
-  const done = live.filter(x=>x.done);
-  let h = "";
-  for(const k of ORDER){
-    const list = open.filter(x=>quad(x.u,x.i)===k).sort((a,b)=>{
-      if(a.date && b.date) return a.date.localeCompare(b.date);
-      if(a.date) return -1; if(b.date) return 1;
-      return a.created-b.created;
-    });
-    const q=Q[k];
-    h += `<section><div class="sh"><span class="dot" style="background:${q.c}"></span><h2>${q.n}</h2><small>${list.length}</small></div>`;
-    h += `<div class="hint">${q.hint}</div>`;
-    if(!list.length) h += `<div class="empty">Nada aqui.</div>`;
-    for(const x of list){
-      const extra = k==="delegate" && x.who ? `<span class="tag">→ ${esc(x.who)}</span>` :
-                    k==="schedule" && x.when ? `<span class="tag">📅 ${fmtDate(x.when)}</span>` : "";
-      h += `<div class="item" style="--c:${q.c}" data-id="${x.id}">
-        <button class="chk" data-act="done" aria-label="Concluir"></button>
-        <div class="body" data-act="edit">
-          <div class="t">${esc(x.title)}</div>
-          <div class="m">${extra}${dueLabel(x.date)}</div>
-          ${x.goal?`<div class="m">🎯 ${esc(x.goal)}</div>`:""}
-        </div></div>`;
-    }
-    h += `</section>`;
-  }
-  if(done.length){
-    h += `<details class="done"><summary>Concluídas (${done.length})</summary>`;
-    for(const x of done.sort((a,b)=>(b.doneAt||0)-(a.doneAt||0))){
-      h += `<div class="item" style="--c:var(--ok)" data-id="${x.id}">
-        <button class="chk" data-act="undo" style="background:var(--ok);border-color:var(--ok)">✓</button>
-        <div class="body" data-act="edit"><div class="t">${esc(x.title)}</div></div></div>`;
-    }
-    h += `</details>`;
-  }
-  app.innerHTML = h;
-}
-
-$("app").addEventListener("click", e=>{
-  const el = e.target.closest("[data-act]"); if(!el) return;
-  const id = el.closest(".item").dataset.id;
-  const it = state.items.find(x=>x.id===id); if(!it) return;
-  const a = el.dataset.act;
-  if(a==="done"){ it.done=true; it.doneAt=Date.now(); it.upd=Date.now(); save(); render(); }
-  else if(a==="undo"){ it.done=false; it.upd=Date.now(); save(); render(); }
-  else if(a==="edit"){ openForm(it); }
-});
-
-/* ---------- formulário ---------- */
-function setSeg(seg, v){ seg.querySelectorAll("button").forEach(b=>b.classList.toggle("on", +b.dataset.v===v)); }
-function refreshForm(){
-  setSeg($("segU"), form.u); setSeg($("segI"), form.i);
-  const k = quad(form.u, form.i), q = Q[k];
-  const r = $("res");
-  r.style.setProperty("--c", q.c);
-  r.innerHTML = `<b>${q.n}</b><br>${q.hint}`;
-  const d = $("fDate").value;
-  $("uHint").textContent = d
-    ? (form.uManual ? "Urgência definida por ti." : `Sugerido pela data: ${autoU(d)?"muita":"pouca"} (urgente se ≤ ${state.days} dias).`)
-    : "Sem data limite → urgência pouca (podes alterar).";
-  const ex = $("extra");
-  const it = editId && state.items.find(x=>x.id===editId) || {};
-  if(k==="delegate"){
-    ex.innerHTML = `<label>Delegar a quem? <span>Opcional</span><input type="text" id="fWho" maxlength="80" value="${esc(it.who||"")}"></label>`;
-  } else if(k==="schedule"){
-    ex.innerHTML = `<label>Agendar para quando? <span>Opcional</span><input type="date" id="fWhen" value="${esc(it.when||"")}"></label>`;
-  } else ex.innerHTML = "";
-}
-function openForm(it){
-  editId = it ? it.id : null;
-  $("fTitle").value = it?.title || "";
-  $("fDate").value = it?.date || "";
-  $("fGoal").value = it?.goal || "";
-  form = {u: it ? it.u : 0, i: it ? it.i : 0, uManual: !!it};
-  $("fDelete").classList.toggle("hide", !it);
-  $("dlg").showModal();
-  refreshForm();
-  if(!it) setTimeout(()=>$("fTitle").focus(),50);
-}
-$("btnAdd").onclick = ()=>openForm(null);
-$("fCancel").onclick = ()=>$("dlg").close();
-$("segU").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return; form.u=+b.dataset.v; form.uManual=true; refreshForm(); });
-$("segI").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return; form.i=+b.dataset.v; refreshForm(); });
-$("fDate").addEventListener("input", ()=>{ if(!form.uManual) form.u=autoU($("fDate").value); else form.u = form.u; refreshForm(); });
-$("fDate").addEventListener("change", ()=>{ form.uManual=false; form.u=autoU($("fDate").value); refreshForm(); });
-
-$("form").addEventListener("submit", e=>{
-  e.preventDefault();
-  const title = $("fTitle").value.trim(); if(!title) return;
-  const data = {
-    title, date:$("fDate").value||"", goal:$("fGoal").value.trim(),
-    u:form.u, i:form.i,
-    who: $("fWho")?.value.trim() || "", when: $("fWhen")?.value || ""
-  };
-  data.upd = Date.now();
-  if(editId){ Object.assign(state.items.find(x=>x.id===editId), data); }
-  else state.items.push(Object.assign({id:uid(), created:Date.now(), done:false}, data));
-  save(); render(); $("dlg").close();
-});
-$("fDelete").onclick = ()=>{
-  if(!editId) return;
-  if(confirm("Apagar esta entrada?")){ const ix=state.items.findIndex(x=>x.id===editId); state.items[ix]={id:editId,deleted:true,upd:Date.now()}; save(); render(); $("dlg").close(); }
-};
-
-/* ---------- menu ---------- */
-$("btnMenu").onclick = ()=>{ $("sDays").value=state.days; $("dlgMenu").showModal(); };
-$("bClose").onclick = ()=>{
-  const n = parseInt($("sDays").value,10);
-  if(!isNaN(n) && n>=0){ state.days=n; save(); render(); }
-  $("dlgMenu").close();
-};
-$("bExport").onclick = ()=>{
-  const blob = new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "prioridades-"+new Date().toISOString().slice(0,10)+".json";
-  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-};
-$("bImport").onclick = ()=>$("fileIn").click();
-$("fileIn").onchange = async e=>{
-  const f = e.target.files[0]; if(!f) return;
-  try{
-    const s = JSON.parse(await f.text());
-    if(!Array.isArray(s.items)) throw 0;
-    if(confirm("Substituir os dados atuais pela cópia importada?")){
-      const now=Date.now();
-      const incoming=s.items.filter(x=>!x.deleted).map(x=>Object.assign({},x,{upd:now}));
-      const ids=new Set(incoming.map(x=>x.id));
-      const gone=state.items.filter(x=>!ids.has(x.id)).map(x=>({id:x.id,deleted:true,upd:now}));
-      state.items=[...incoming,...gone]; save(); render(); $("dlgMenu").close(); toast("Importado");
-    }
-  }catch(err){ toast("Ficheiro inválido"); }
-  e.target.value="";
-};
-
-/* ---------- sincronização GitHub ---------- */
-const GK = "prioridades.gh.v1";
-let gh = (()=>{ try{ return JSON.parse(localStorage.getItem(GK))||{}; }catch(e){ return {}; } })();
-const ghOn = () => !!(gh.repo && gh.token);
-let syncing=false, again=false, timer=null;
-function saveGh(){ try{ localStorage.setItem(GK, JSON.stringify(gh)); }catch(e){} }
-const enc = s => btoa(unescape(encodeURIComponent(s)));
-const dec = s => decodeURIComponent(escape(atob(s.replace(/\s/g,""))));
-const canon = items => JSON.stringify([...items].sort((a,b)=>a.id<b.id?-1:1).map(o=>JSON.stringify(o,Object.keys(o).sort())));
-function merge(a,b){
-  const m=new Map();
-  for(const x of [...a,...b]){ const o=m.get(x.id); if(!o || (x.upd||0)>(o.upd||0)) m.set(x.id,x); }
-  const cut=Date.now()-30*864e5;
-  return [...m.values()].filter(x=>!(x.deleted && (x.upd||0)<cut));
-}
-function setStatus(st,msg){
-  const b=$("btnSync");
-  b.className="iconbtn "+(st==="ok"?"ok":st==="err"?"bad":"");
-  b.textContent = st==="busy"?"⟳" : st==="ok"?"☁✓" : st==="err"?"☁!" : "☁";
-  b.title = msg||"";
-  const g=$("gMsg"); g.textContent = st==="off" ? "Não ligado. Os dados ficam só neste dispositivo." : (msg||"");
-  g.className = "hint "+(st==="err"?"bad":st==="ok"?"ok":"");
-}
-function errMsg(code){
-  return code===401 ? "Token inválido ou expirado"
-       : code===403 ? "Sem permissão (o token precisa de Contents: Read and write)"
-       : code===404 ? "Repositório não encontrado ou token sem acesso a ele"
-       : "Erro do GitHub ("+code+")";
-}
-function api(method, body){
-  const url = "https://api.github.com/repos/"+gh.repo+"/contents/"+encodeURI(gh.path||"tasks.json");
-  return fetch(url+(method==="GET"?"?t="+Date.now():""),{
-    method, cache:"no-store",
-    headers:{Authorization:"Bearer "+gh.token, Accept:"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28"},
-    body: body?JSON.stringify(body):undefined
-  });
-}
-function scheduleSync(){ if(!ghOn()) return; clearTimeout(timer); timer=setTimeout(sync,1200); }
-async function sync(){
-  if(!ghOn()){ setStatus("off"); return; }
-  if(syncing){ again=true; return; }
-  if(!navigator.onLine){ setStatus("err","Sem rede. Fica guardado neste dispositivo."); return; }
-  syncing=true; setStatus("busy","A sincronizar…");
-  try{
-    let done=false;
-    for(let n=0; n<3 && !done; n++){
-      const r = await api("GET");
-      let sha=null, remote=[];
-      if(r.status===200){ const j=await r.json(); sha=j.sha; remote=(JSON.parse(dec(j.content)).items)||[]; }
-      else if(r.status!==404) throw new Error(errMsg(r.status));
-      const merged = merge(state.items, remote);
-      if(canon(merged)!==canon(state.items)){ state.items=merged; save(true); render(); }
-      if(sha && canon(merged)===canon(remote)){ done=true; break; }
-      const p = await api("PUT",{message:"Prioridades: atualização", content:enc(JSON.stringify({v:1,items:merged},null,1)), ...(sha?{sha}:{})});
-      if(p.ok){ done=true; break; }
-      if(p.status===409 || p.status===422) continue;
-      throw new Error(errMsg(p.status));
-    }
-    if(!done) throw new Error("Conflito repetido. Tenta de novo.");
-    setStatus("ok","Sincronizado às "+new Date().toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"}));
-  }catch(e){
-    setStatus("err", e.message==="Failed to fetch" ? "Sem rede. Fica guardado neste dispositivo." : e.message);
-  }finally{
-    syncing=false; if(again){ again=false; setTimeout(sync,300); }
-  }
-}
-function fillGh(){
-  $("gRepo").value=gh.repo||""; $("gPath").value=gh.path||""; $("gToken").value="";
-  $("gToken").placeholder = gh.token ? "•••• guardado (vazio = manter)" : "github_pat_…";
-}
-$("btnMenu").addEventListener("click", fillGh);
-$("gSave").onclick = ()=>{
-  const repo=$("gRepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,"").replace(/\/+$/,"");
-  const token=$("gToken").value.trim() || gh.token || "";
-  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){ setStatus("err","Repositório no formato utilizador/nome"); return; }
-  if(!token){ setStatus("err","Falta o token"); return; }
-  gh={repo, path:$("gPath").value.trim().replace(/^\/+/,"")||"tasks.json", token};
-  saveGh(); sync();
-};
-$("gOff").onclick = ()=>{ gh={}; saveGh(); setStatus("off"); fillGh(); };
-$("btnSync").onclick = ()=>{ if(ghOn()) sync(); else { fillGh(); $("dlgMenu").showModal(); } };
-document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) sync(); });
-addEventListener("online", ()=>sync());
-
-render();
-setStatus("off");
-if(ghOn()) sync();
-if("serviceWorker" in navigator){
-  window.addEventListener("load", ()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
-}
-</script>
+<script src="app.js"></script>
 </body>
 </html>
