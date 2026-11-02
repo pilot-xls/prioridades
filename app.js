@@ -368,12 +368,12 @@ $("sBadge").onchange = async () => {
   render();
 };
 $("bExport").onclick = async () => {
-  const name = "prioridades-" + localISO() + ".json";
+  const name = "alvo-" + localISO() + ".json";
   const data = {v:1, days:state.days, daysUpd:state.daysUpd, items:state.items.filter(x => !x.deleted)};
   const file = new File([JSON.stringify(data, null, 2)], name, {type:"application/json"});
   // No telemóvel (sobretudo iPhone com a app instalada) a partilha é mais fiável do que descarregar.
   if(matchMedia("(pointer:coarse)").matches && navigator.canShare?.({files:[file]})){
-    try{ await navigator.share({files:[file], title:"Prioridades — cópia"}); return; }
+    try{ await navigator.share({files:[file], title:"Alvo — cópia"}); return; }
     catch(err){ if(err.name === "AbortError") return; }
   }
   const a = document.createElement("a");
@@ -464,7 +464,7 @@ async function sync(){
         state.items = items; state.days = days; state.daysUpd = daysUpd; save(true); render(); showDays();
       }
       if(sha && canon(items) === canon(remote.items) && remote.days === days && remote.daysUpd === daysUpd){ done = true; break; }
-      const p = await api("PUT", {message:"Prioridades: atualização", content:enc(JSON.stringify({v:1, days, daysUpd, items}, null, 1)), ...(sha ? {sha} : {})});
+      const p = await api("PUT", {message:"Alvo: atualização", content:enc(JSON.stringify({v:1, days, daysUpd, items}, null, 1)), ...(sha ? {sha} : {})});
       if(p.ok){ done = true; break; }
       if(p.status === 409 || p.status === 422) continue;
       throw new Error(errMsg(p.status));
