@@ -9,11 +9,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Prioridades">
+<meta name="apple-mobile-web-app-title" content="Alvo">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<title>Prioridades</title>
+<title>Alvo</title>
 <style>
   :root{
     color-scheme:dark;
@@ -22,6 +22,7 @@
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   :focus-visible{outline:2px solid var(--link);outline-offset:2px}
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   html,body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
   body{padding:env(safe-area-inset-top) 0 calc(90px + env(safe-area-inset-bottom))}
   header{padding:16px 16px 4px;display:flex;justify-content:space-between;align-items:center;max-width:720px;margin:0 auto}
@@ -61,7 +62,7 @@
   .sheet-h{font-size:17px;margin:0;outline:none}
   label{display:block;font-weight:600;margin:14px 0 6px;font-size:14.5px}
   label span{display:block;font-weight:400;color:var(--mut);font-size:12.5px}
-  input[type=text],input[type=password],input[type=date],input[type=number],textarea{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit;margin-top:4px}
+  input[type=text],input[type=password],input[type=date],input[type=number],textarea{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit;font-size:16px;font-weight:400;margin-top:4px} /* 16px: abaixo disto o iPhone faz zoom ao tocar e a página fica maior que o ecrã */
   @supports (-webkit-touch-callout:none){ /* iOS: campo de data vazio fica sem altura */
     input[type=date]{-webkit-appearance:none;appearance:none;min-height:46px;text-align:left}
     input[type=date]::-webkit-date-and-time-value{text-align:left}
@@ -89,7 +90,7 @@
 </head>
 <body>
 <header>
-  <h1>Prioridades</h1>
+  <h1>Alvo</h1>
   <div style="display:flex;gap:8px">
     <button class="iconbtn" id="btnSync" aria-label="Sincronizar">☁</button>
     <button class="iconbtn" id="btnMenu" aria-label="Definições">⋯</button>

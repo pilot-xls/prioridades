@@ -1,8 +1,8 @@
 {
   "id": "./index.html",
-  "name": "Prioridades",
-  "short_name": "Prioridades",
-  "description": "Organiza tarefas, objetivos e ideias por urgência e importância.",
+  "name": "Alvo",
+  "short_name": "Alvo",
+  "description": "Alvo organiza tarefas, objetivos e ideias por urgência e importância, e diz-te o que fazer agora.",
   "lang": "pt-PT",
   "dir": "ltr",
   "start_url": "./index.html",

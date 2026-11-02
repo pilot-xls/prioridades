@@ -236,6 +236,12 @@ function updateBadge(n){
   p?.catch?.(() => {});
 }
 
+/* ---------- painéis ---------- */
+// Fecha o teclado antes de fechar o painel e repõe a página encostada à esquerda
+// (no iPhone o teclado/zoom podia deixar a lista deslocada ou maior que o ecrã).
+function closeDlg(d){ document.activeElement?.blur?.(); d.close(); }
+for(const d of [$("dlg"), $("dlgMenu")]) d.addEventListener("close", () => { if(scrollX) scrollTo(0, scrollY); });
+
 /* ---------- formulário ---------- */
 let editId = null, form = {u:0, i:null, um:false}, needI = false, snap = "";
 const formState = () => JSON.stringify([$("fTitle").value, $("fDate").value, $("fGoal").value, $("fWho").value, $("fWhen").value, form.i, form.um, form.um ? form.u : null]);
@@ -291,7 +297,7 @@ function openForm(it){
 }
 function tryCloseForm(){
   if(formState() !== snap && !confirm("Descartar as alterações?")) return;
-  $("dlg").close();
+  closeDlg($("dlg"));
 }
 $("btnAdd").onclick = () => openForm(null);
 $("fCancel").onclick = tryCloseForm;
@@ -321,13 +327,13 @@ $("form").addEventListener("submit", e => {
   const ix = editId ? state.items.findIndex(x => x.id === editId) : -1;
   if(ix >= 0 && !state.items[ix].deleted) Object.assign(state.items[ix], data);
   else state.items.push(Object.assign({id:editId || uid(), created:now, done:false}, data));
-  save(); render(); $("dlg").close();
+  save(); render(); closeDlg($("dlg"));
 });
 $("fDelete").onclick = () => {
   if(!editId || !confirm("Apagar esta entrada?")) return;
   const ix = state.items.findIndex(x => x.id === editId);
   if(ix >= 0) state.items[ix] = {id:editId, deleted:true, upd:Date.now()};
-  save(); render(); $("dlg").close();
+  save(); render(); closeDlg($("dlg"));
 };
 
 /* ---------- definições ---------- */
@@ -348,11 +354,11 @@ function applyDays(){
   if(n !== state.days){ state.days = n; state.daysUpd = Date.now(); save(); render(); }
 }
 $("btnMenu").onclick = openMenu;
-$("bClose").onclick = () => $("dlgMenu").close();
+$("bClose").onclick = () => closeDlg($("dlgMenu"));
 $("sDays").addEventListener("input", () => { daysDirty = true; });
 $("sDays").addEventListener("change", applyDays);
 $("dlgMenu").addEventListener("close", applyDays); // Esc / voltar também guardam
-$("dlgMenu").addEventListener("click", e => { if(e.target === $("dlgMenu")) $("dlgMenu").close(); });
+$("dlgMenu").addEventListener("click", e => { if(e.target === $("dlgMenu")) closeDlg($("dlgMenu")); });
 if("setAppBadge" in navigator) $("wBadge").classList.remove("hide");
 $("sBadge").onchange = async () => {
   prefs.badge = $("sBadge").checked; savePrefs();
@@ -362,12 +368,12 @@ $("sBadge").onchange = async () => {
   render();
 };
 $("bExport").onclick = async () => {
-  const name = "prioridades-" + localISO() + ".json";
+  const name = "alvo-" + localISO() + ".json";
   const data = {v:1, days:state.days, daysUpd:state.daysUpd, items:state.items.filter(x => !x.deleted)};
   const file = new File([JSON.stringify(data, null, 2)], name, {type:"application/json"});
   // No telemóvel (sobretudo iPhone com a app instalada) a partilha é mais fiável do que descarregar.
   if(matchMedia("(pointer:coarse)").matches && navigator.canShare?.({files:[file]})){
-    try{ await navigator.share({files:[file], title:"Prioridades — cópia"}); return; }
+    try{ await navigator.share({files:[file], title:"Alvo — cópia"}); return; }
     catch(err){ if(err.name === "AbortError") return; }
   }
   const a = document.createElement("a");
@@ -389,7 +395,7 @@ $("fileIn").onchange = async e => {
   const gone = state.items.filter(x => !ids.has(x.id)).map(x => ({id:x.id, deleted:true, upd:now}));
   state.items = [...incoming, ...gone];
   if(validDays(s.days)){ state.days = s.days; state.daysUpd = now; }
-  save(); render(); $("dlgMenu").close();
+  save(); render(); closeDlg($("dlgMenu"));
   toast(`Importado: ${incoming.length} entradas`);
 };
 
@@ -458,7 +464,7 @@ async function sync(){
         state.items = items; state.days = days; state.daysUpd = daysUpd; save(true); render(); showDays();
       }
       if(sha && canon(items) === canon(remote.items) && remote.days === days && remote.daysUpd === daysUpd){ done = true; break; }
-      const p = await api("PUT", {message:"Prioridades: atualização", content:enc(JSON.stringify({v:1, days, daysUpd, items}, null, 1)), ...(sha ? {sha} : {})});
+      const p = await api("PUT", {message:"Alvo: atualização", content:enc(JSON.stringify({v:1, days, daysUpd, items}, null, 1)), ...(sha ? {sha} : {})});
       if(p.ok){ done = true; break; }
       if(p.status === 409 || p.status === 422) continue;
       throw new Error(errMsg(p.status));

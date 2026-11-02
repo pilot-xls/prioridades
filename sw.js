@@ -1,4 +1,4 @@
-const CACHE = "prioridades-v3";
+const CACHE = "prioridades-v4";
 const FILES = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png"];
 const TIMEOUT = 3000; // com rede fraca, ao fim de 3 s mostra a cópia guardada
 let slowUntil = 0;     // depois de um timeout, os pedidos seguintes usam logo a cópia (sem esperar mais 3 s cada)
