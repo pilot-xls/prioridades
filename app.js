@@ -1,508 +1,424 @@
-"use strict";
-const KEY = "prioridades.v1", GK = "prioridades.gh.v1", PK = "prioridades.prefs.v1";
-const DAY = 864e5, KEEP = 30 * DAY; // concluídas e apagadas desaparecem ao fim de 30 dias
-const RE_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const Q = {
-  now:      {n:"Fazer já",        c:"#ef4444", hint:"Urgente + importante. Faz isto primeiro."},
-  schedule: {n:"Agendar",         c:"#3b82f6", hint:"Importante, sem pressa. Marca quando o vais fazer."},
-  delegate: {n:"Delegar",         c:"#f59e0b", hint:"Urgente, mas pouco importante. Passa a alguém."},
-  drop:     {n:"Eliminar / sem ação", c:"#64748b", hint:"Nem urgente nem importante. Elimina ou deixa sem ação."}
-};
-const ORDER = ["now","schedule","delegate","drop"];
+'use strict';
 
-const $ = id => document.getElementById(id);
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const num = v => Number.isFinite(v) ? v : 0;
-const str = (v, max) => typeof v === "string" ? v.slice(0, max) : "";
-const validDays = n => Number.isInteger(n) && n >= 0 && n <= 365;
-function hash(s){ // cyrb53: id estável para itens importados sem id
-  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
-  for(let i = 0; i < s.length; i++){ const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+const $view = document.getElementById('view');
+const $top = document.getElementById('top');
+const $modal = document.getElementById('modal');
+const $toast = document.getElementById('toast');
+
+let data = { active: [], archive: [], settings: {} };
+let view = { name: 'list', id: null, search: '' };
+let syncInfo = { configured: false, status: 'off', repo: '', path: 'tarefas.json', branch: '', lastOk: null, error: null };
+let cloudBtn = null;
+let syncRedraw = null;
+const DEFAULT_REPO = 'pilot-xls/prioridades-dados';
+
+// ---------- utilidades ----------
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k === 'value' || k === 'checked' || k === 'disabled') e[k] = v;
+    else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c);
+  return e;
 }
 
-/* ---------- modelo de dados ---------- */
-// Normaliza qualquer item (local, importado ou vindo do GitHub) para uma forma conhecida e segura.
-function cleanItem(x){
-  if(!x || typeof x !== "object") return null;
-  const id = typeof x.id === "string" && x.id ? x.id.slice(0, 64) : "h" + hash(JSON.stringify(x));
-  const upd = Number.isFinite(x.upd) ? x.upd : num(x.created);
-  if(x.deleted) return {id, deleted:true, upd};
-  const o = {
-    id, title: str(x.title, 200).trim() || "(sem título)",
-    date: RE_DATE.test(x.date) ? x.date : "", goal: str(x.goal, 2000),
-    u: x.u ? 1 : 0, i: x.i ? 1 : 0,
-    who: str(x.who, 80), when: RE_DATE.test(x.when) ? x.when : "",
-    created: Number.isFinite(x.created) ? x.created : upd, upd, done: !!x.done
+const p2 = n => String(n).padStart(2, '0');
+function toInput(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+function fromInput(s) {
+  if (!s) return null;
+  const ms = new Date(s).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+const fmt = ms => new Date(ms).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' });
+
+function group(t) {
+  if (t.due !== null) return t.importance === 'alta' ? 0 : 1;
+  return t.importance === 'alta' ? 2 : 3;
+}
+const urgent = t => t.due !== null && t.due - Date.now() < 86400e3;
+
+function alertText(a) {
+  const u = { min: 'min', h: 'h', d: a.amount === 1 ? 'dia' : 'dias' }[a.unit];
+  return `${a.amount} ${u} antes`;
+}
+function repeatText(r) {
+  const u = { min: 'min', h: 'h', d: 'dias' }[r.unit];
+  return `a partir de ${fmt(r.startAt)}, a cada ${r.every} ${u}`;
+}
+function meta(t) {
+  const imp = t.importance === 'alta' ? 'alta' : 'baixa';
+  if (t.due !== null) return `${t.due < Date.now() ? 'Em atraso · ' : ''}${fmt(t.due)} · ${imp}`;
+  return `Sem data · ${imp}`;
+}
+
+let toastTimer;
+function toast(msg) {
+  $toast.textContent = msg;
+  $toast.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $toast.classList.add('hidden'), 3000);
+}
+
+async function run(p) {
+  try {
+    data = await p;
+    render();
+  } catch (e) {
+    toast(String(e.message || e).replace(/^Error invoking remote method '[^']*': (Error: )?/, ''));
+  }
+}
+
+function closeModal() {
+  syncRedraw = null;
+  $modal.classList.add('hidden');
+  $modal.replaceChildren();
+  if (view.name === 'list' && !!cloudBtn !== syncInfo.configured) render();
+}
+function openModal(box) {
+  $modal.replaceChildren(el('div', { class: 'box' }, box));
+  $modal.classList.remove('hidden');
+}
+$modal.addEventListener('mousedown', e => { if (e.target === $modal) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// ---------- vistas ----------
+let render = function () {
+  if (view.name === 'detail' && !find(view.id)) view = { name: 'list', id: null, search: '' };
+  $top.replaceChildren();
+  $view.replaceChildren();
+  if (view.name === 'list') renderList();
+  else if (view.name === 'archive') renderArchive();
+  else renderDetail();
+};
+
+function find(id) {
+  return data.active.find(t => t.id === id) || data.archive.find(t => t.id === id);
+}
+
+function syncText(i) {
+  if (i.status === 'syncing') return 'A sincronizar…';
+  if (i.status === 'ok') return 'Sincronizado às ' + new Date(i.lastOk).toLocaleTimeString('pt-PT', { timeStyle: 'short' });
+  if (i.status === 'offline') return 'Sem ligação. Tenta de novo automaticamente.';
+  if (i.status === 'error') return i.error || 'Erro de sincronização.';
+  return 'A aguardar a primeira sincronização';
+}
+
+function updateCloud() {
+  if (!cloudBtn) return;
+  const i = syncInfo;
+  cloudBtn.textContent = i.status === 'syncing' ? '⟳' : (i.status === 'error' || i.status === 'offline') ? '⚠' : '☁';
+  cloudBtn.className = 'icon ' + (i.status === 'ok' ? 'sync-ok' : (i.status === 'error' || i.status === 'offline') ? 'sync-err' : '');
+  cloudBtn.title = syncText(i);
+  cloudBtn.setAttribute('aria-label', 'Sincronização: ' + syncText(i));
+}
+
+function renderList() {
+  cloudBtn = syncInfo.configured ? el('button', { onclick: openSettings }) : null;
+  updateCloud();
+  $top.append(
+    el('span', { class: 'grow' }, 'Tarefas'),
+    ...(cloudBtn ? [cloudBtn] : []),
+    el('button', { class: 'icon', title: 'Arquivo', 'aria-label': 'Arquivo', onclick: () => { view = { name: 'archive', search: '' }; render(); } }, '🗄'),
+    el('button', { class: 'icon', title: 'Definições', 'aria-label': 'Definições', onclick: openSettings }, '⚙')
+  );
+  if (!data.active.length) {
+    $view.append(el('div', { class: 'empty' }, el('b', {}, 'Comece a sua lista'), 'Crie a primeira tarefa ou nota.'));
+  }
+  for (const t of data.active) {
+    const row = el('div', { class: `task g${group(t)}${urgent(t) ? ' urgent' : ''}` },
+      el('span', { class: 'dot' }),
+      el('div', { class: 'info' }, el('div', { class: 'name', title: t.name }, t.name), el('div', { class: 'meta' }, meta(t) + (t.notes.length ? ` · ${t.notes.length} nota${t.notes.length > 1 ? 's' : ''}` : ''))),
+      el('button', { onclick: () => { view = { name: 'detail', id: t.id }; render(); } }, 'Detalhes'),
+      el('button', { class: 'danger', title: 'Enviar para o arquivo', onclick: () => {
+        row.classList.add('out');
+        setTimeout(() => run(window.api.archive(t.id)), 230);
+      } }, 'Apagar')
+    );
+    $view.append(row);
+  }
+  $view.append(el('button', { class: 'primary big', onclick: () => openForm(null) }, '+ Nova tarefa'));
+}
+
+function renderArchive() {
+  $top.append(
+    el('button', { class: 'icon', 'aria-label': 'Voltar', onclick: () => { view = { name: 'list' }; render(); } }, '←'),
+    el('span', { class: 'grow' }, `Arquivo (${data.archive.length})`)
+  );
+  const search = el('input', { type: 'text', placeholder: 'Pesquisar no arquivo (nome ou notas)', value: view.search || '' });
+  const list = el('div');
+  const draw = () => {
+    view.search = search.value;
+    const q = search.value.trim().toLowerCase();
+    list.replaceChildren();
+    const items = data.archive.filter(t => !q || t.name.toLowerCase().includes(q) || t.notes.some(n => n.text.toLowerCase().includes(q)));
+    if (!items.length) list.append(el('div', { class: 'empty' }, q ? 'Nada encontrado.' : 'O arquivo está vazio.'));
+    for (const t of items) {
+      list.append(el('div', { class: `task g${group(t)}` },
+        el('span', { class: 'dot' }),
+        el('div', { class: 'info' },
+          el('div', { class: 'name', title: t.name }, t.name),
+          el('div', { class: 'meta' }, `${meta(t)} · arquivada ${fmt(t.archivedAt)}`)),
+        el('button', { onclick: () => { view = { name: 'detail', id: t.id }; render(); } }, 'Ver'),
+        el('button', { onclick: () => run(window.api.restore(t.id)) }, 'Restaurar')));
+    }
   };
-  if(typeof x.um === "boolean") o.um = x.um;
-  if(o.done && Number.isFinite(x.doneAt)) o.doneAt = x.doneAt;
-  return o;
-}
-const ckey = o => JSON.stringify(o, Object.keys(o).sort());
-function newer(a, b){ // o mais recente ganha; empate decidido igual em todos os dispositivos
-  if(!a) return b; if(!b) return a;
-  if(a.upd !== b.upd) return b.upd > a.upd ? b : a;
-  return ckey(b) > ckey(a) ? b : a;
-}
-function cleanList(list){
-  const m = new Map();
-  for(const raw of Array.isArray(list) ? list : []){ const x = cleanItem(raw); if(x) m.set(x.id, newer(m.get(x.id), x)); }
-  return [...m.values()];
-}
-function merge(a, b){
-  const m = new Map();
-  for(const x of [...a, ...b]) m.set(x.id, newer(m.get(x.id), x));
-  const cut = Date.now() - KEEP;
-  return [...m.values()].filter(x => !(x.deleted && x.upd < cut));
-}
-const canon = items => JSON.stringify(items.map(ckey).sort());
-
-function load(){
-  const o = {items:[], days:7, daysUpd:0};
-  try{
-    const s = JSON.parse(localStorage.getItem(KEY));
-    if(s && typeof s === "object"){
-      o.items = cleanList(s.items);
-      if(validDays(s.days)) o.days = s.days;
-      o.daysUpd = num(s.daysUpd);
-    }
-  }catch(e){}
-  return o;
-}
-let state = load();
-let prefs = (() => { try{ return Object.assign({badge:true}, JSON.parse(localStorage.getItem(PK))); }catch(e){ return {badge:true}; } })();
-const savePrefs = () => { try{ localStorage.setItem(PK, JSON.stringify(prefs)); }catch(e){} };
-
-let persistAsked = false;
-function save(noSync){
-  state.items = cleanList(state.items);
-  try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){ toast("Não foi possível guardar neste dispositivo"); }
-  if(!persistAsked){ // pede ao browser para não apagar os dados locais
-    persistAsked = true;
-    navigator.storage?.persisted?.().then(p => p || navigator.storage.persist()).catch(() => {});
-  }
-  if(!noSync) scheduleSync();
-}
-// Converte concluídas há mais de 30 dias em "apagadas" e limpa apagadas antigas.
-function housekeep(noSync){
-  const now = Date.now(), cut = now - KEEP; let ch = false;
-  const out = [];
-  for(const x of state.items){
-    if(x.deleted){ if(x.upd < cut){ ch = true; continue; } out.push(x); }
-    else if(x.done && x.doneAt && x.doneAt < cut){ out.push({id:x.id, deleted:true, upd:now}); ch = true; }
-    else out.push(x);
-  }
-  if(ch){ state.items = out; save(noSync); }
-  return ch;
+  search.addEventListener('input', draw);
+  $view.append(el('div', { style: 'margin-bottom:10px' }, search), list);
+  draw();
 }
 
-/* ---------- datas e urgência ---------- */
-function today(){ const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
-function daysTo(s){ if(!RE_DATE.test(s || "")) return null; const [y, m, d] = s.split("-").map(Number); return Math.round((new Date(y, m - 1, d) - today()) / DAY); }
-function fmtDate(s){ if(!RE_DATE.test(s || "")) return ""; const [y, m, d] = s.split("-"); return `${d}/${m}/${y}`; }
-function localISO(){ const d = new Date(), p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
+function renderDetail() {
+  const t = find(view.id);
+  const archived = t.archivedAt !== null;
+  $top.append(
+    el('button', { class: 'icon', 'aria-label': 'Voltar', onclick: () => { view = { name: archived ? 'archive' : 'list', search: '' }; render(); } }, '←'),
+    el('span', { class: 'grow' }, archived ? 'Detalhes (arquivada)' : 'Detalhes')
+  );
+  const g = group(t);
+  const chips = el('div', { class: `g${g}` },
+    el('span', { class: 'chip' }, t.importance === 'alta' ? 'Importância alta' : 'Importância baixa'),
+    el('span', { class: 'chip soft' }, t.due !== null ? fmt(t.due) : 'Sem data'));
+  const info = [];
+  if (t.alerts.length) info.push(el('div', { class: 'meta' }, 'Avisos: ' + t.alerts.map(alertText).join(', ')));
+  if (t.repeat) info.push(el('div', { class: 'meta' }, 'Lembrete ' + repeatText(t.repeat)));
 
-// Itens antigos sem "um": com data → automático; sem data e urgência 1 → foi escolhida à mão.
-const isManual = x => typeof x.um === "boolean" ? x.um : (!x.date && !!x.u);
-// Urgência efetiva, recalculada sempre que se desenha (não fica congelada no dia da criação).
-function urgOf(x){
-  const n = daysTo(x.date);
-  if(n !== null && n < 0) return {u:1, why:"late", n};
-  const w = daysTo(x.when);
-  if(x.i === 1 && w !== null && w <= 0) return {u:1, why:"when", n};
-  if(isManual(x)) return {u:x.u ? 1 : 0, why:"manual", n};
-  if(n === null) return {u:0, why:"nodate", n};
-  return {u:n <= state.days ? 1 : 0, why:"auto", n};
-}
-function quad(u, i){
-  if(u && i) return "now";
-  if(u && !i) return "delegate";
-  if(!u && i) return "schedule";
-  return "drop";
-}
-const quadOf = x => quad(urgOf(x).u, x.i);
-
-function dueLabel(s){
-  const n = daysTo(s); if(n === null) return "";
-  if(n < 0) return `<span class="late">atrasada ${-n}d · ${fmtDate(s)}</span>`;
-  if(n === 0) return `<span class="late">hoje</span>`;
-  if(n === 1) return `amanhã · ${fmtDate(s)}`;
-  return `${fmtDate(s)} (${n}d)`;
-}
-function whenLabel(s){
-  const n = daysTo(s); if(n === null) return "";
-  if(n < 0) return `📅 ${fmtDate(s)} (passou)`;
-  if(n === 0) return "📅 hoje";
-  if(n === 1) return "📅 amanhã";
-  return `📅 ${fmtDate(s)}`;
-}
-
-/* ---------- avisos ---------- */
-let toastEl = null, toastT = 0;
-function toast(text, action, fn){
-  if(toastEl) toastEl.remove();
-  clearTimeout(toastT);
-  const e = document.createElement("div");
-  e.className = "toast" + (action ? " act" : "");
-  e.setAttribute("role", "status");
-  const s = document.createElement("span"); s.textContent = text; e.appendChild(s);
-  if(action){
-    const b = document.createElement("button"); b.type = "button"; b.textContent = action;
-    b.onclick = () => { e.remove(); toastEl = null; fn(); };
-    e.appendChild(b);
-  }
-  // Dentro de um diálogo aberto, senão fica escondido atrás dele.
-  (document.querySelector("dialog[open]") || document.body).appendChild(e);
-  toastEl = e;
-  toastT = setTimeout(() => { e.remove(); if(toastEl === e) toastEl = null; }, action ? 5000 : 2500);
-}
-
-/* ---------- lista ---------- */
-let doneOpen = false;
-function sortKey(x){ return [x.date, x.when].filter(d => RE_DATE.test(d || "")).sort()[0] || ""; }
-function cmp(a, b){
-  const ka = sortKey(a), kb = sortKey(b);
-  if(ka !== kb){ if(!ka) return 1; if(!kb) return -1; return ka < kb ? -1 : 1; }
-  return a.created - b.created;
-}
-function render(){
-  const live = state.items.filter(x => !x.deleted);
-  const open = live.filter(x => !x.done), done = live.filter(x => x.done);
-  const groups = {now:[], schedule:[], delegate:[], drop:[]};
-  for(const x of open) groups[quadOf(x)].push(x);
-  let h = "";
-  if(!live.length) h += `<div class="welcome">Toca em <b>+</b> para adicionar a primeira entrada. Respondes a 2 perguntas — prazo e objetivo — e a app diz-te o que fazer.</div>`;
-  for(const k of ORDER){
-    const list = groups[k].sort(cmp), q = Q[k];
-    h += `<section><div class="sh"><span class="dot" style="background:${q.c}"></span><h2>${q.n}</h2><small>${list.length}</small></div>`;
-    h += `<div class="hint">${q.hint}</div>`;
-    if(!list.length) h += `<div class="empty">Nada aqui.</div>`;
-    for(const x of list){
-      const meta = (x.who ? `<span class="tag">→ ${esc(x.who)}</span>` : "") +
-                   (x.when ? `<span class="tag">${esc(whenLabel(x.when))}</span>` : "") + dueLabel(x.date);
-      h += `<div class="item" style="--c:${q.c}" data-id="${esc(x.id)}">
-        <button class="chk" data-act="done" aria-label="Concluir: ${esc(x.title)}"><span class="ring"></span></button>
-        <div class="body" data-act="edit" role="button" tabindex="0">
-          <div class="t">${esc(x.title)}</div>
-          ${meta ? `<div class="m">${meta}</div>` : ""}
-          ${x.goal ? `<div class="m">🎯 ${esc(x.goal)}</div>` : ""}
-        </div></div>`;
-    }
-    h += `</section>`;
-  }
-  if(done.length){
-    h += `<details class="done"${doneOpen ? " open" : ""}><summary>Concluídas (${done.length}) <small>· saem ao fim de 30 dias</small></summary>`;
-    for(const x of done.sort((a, b) => num(b.doneAt) - num(a.doneAt))){
-      h += `<div class="item" style="--c:var(--ok)" data-id="${esc(x.id)}">
-        <button class="chk on" data-act="undo" aria-label="Reabrir: ${esc(x.title)}"><span class="ring">✓</span></button>
-        <div class="body" data-act="edit" role="button" tabindex="0"><div class="t">${esc(x.title)}</div></div></div>`;
-    }
-    h += `</details>`;
-  }
-  $("app").innerHTML = h;
-  updateBadge(groups.now.length);
-}
-// <details> não faz "bubble" do evento toggle: apanhar na fase de captura.
-$("app").addEventListener("toggle", e => { if(e.target.matches?.("details.done")) doneOpen = e.target.open; }, true);
-
-function setDone(id, v, offerUndo){
-  const it = state.items.find(x => x.id === id); if(!it || it.deleted) return;
-  it.done = v; it.upd = Date.now();
-  if(v) it.doneAt = Date.now(); else delete it.doneAt;
-  save(); render();
-  if(offerUndo) toast("Concluída", "Anular", () => setDone(id, false, false));
-}
-function act(el){
-  const id = el.closest(".item").dataset.id;
-  const it = state.items.find(x => x.id === id); if(!it || it.deleted) return;
-  const a = el.dataset.act;
-  if(a === "done") setDone(id, true, true);
-  else if(a === "undo") setDone(id, false, false);
-  else if(a === "edit") openForm(it);
-}
-$("app").addEventListener("click", e => { const el = e.target.closest("[data-act]"); if(el) act(el); });
-$("app").addEventListener("keydown", e => {
-  if((e.key === "Enter" || e.key === " ") && e.target.matches('[data-act="edit"]')){ e.preventDefault(); act(e.target); }
-});
-
-/* ---------- badge no ícone ---------- */
-function updateBadge(n){
-  if(!("setAppBadge" in navigator)) return;
-  const p = prefs.badge && n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge();
-  p?.catch?.(() => {});
-}
-
-/* ---------- painéis ---------- */
-// Fecha o teclado antes de fechar o painel e repõe a página encostada à esquerda
-// (no iPhone o teclado/zoom podia deixar a lista deslocada ou maior que o ecrã).
-function closeDlg(d){ document.activeElement?.blur?.(); d.close(); }
-for(const d of [$("dlg"), $("dlgMenu")]) d.addEventListener("close", () => { if(scrollX) scrollTo(0, scrollY); });
-
-/* ---------- formulário ---------- */
-let editId = null, form = {u:0, i:null, um:false}, needI = false, snap = "";
-const formState = () => JSON.stringify([$("fTitle").value, $("fDate").value, $("fGoal").value, $("fWho").value, $("fWhen").value, form.i, form.um, form.um ? form.u : null]);
-const formUrg = () => urgOf({date:$("fDate").value, when:$("fWhen").value, i:form.i, um:form.um, u:form.u});
-function setSeg(seg, v){ seg.querySelectorAll("button").forEach(b => { const on = +b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }); }
-function refreshForm(){
-  const r = formUrg(), d = $("fDate").value;
-  setSeg($("segU"), r.u); setSeg($("segI"), form.i);
-  const falta = r.n === 0 ? "é hoje" : r.n === 1 ? "falta 1 dia" : `faltam ${r.n} dias`;
-  $("uHint").textContent = {
-    late: "O prazo já passou → conta sempre como urgente.",
-    when: "Chegou o dia agendado → conta como urgente.",
-    nodate: "Sem data limite → urgência pouca (podes alterar).",
-    auto: `Pela data: ${falta} (urgente se ≤ ${state.days} dias). Atualiza-se sozinha.`,
-    manual: d ? "Definida por ti (a data não a altera)." : "Definida por ti."
-  }[r.why];
-  $("uAuto").classList.toggle("hide", !(r.why === "manual" && d));
-
-  const res = $("res");
-  let k = null;
-  if(form.i === null){
-    res.style.setProperty("--c", needI ? "var(--red)" : "var(--line)");
-    res.innerHTML = needI
-      ? `<b class="bad">Falta escolher a importância</b><br>Isto contribui para um objetivo teu? Escolhe 0 ou 1.`
-      : `<b>Escolhe a importância</b><br>para ver o que fazer com isto.`;
-  } else {
-    k = quad(r.u, form.i);
-    res.style.setProperty("--c", Q[k].c);
-    res.innerHTML = `<b>${Q[k].n}</b><br>${Q[k].hint}`;
-  }
-  $("segI").classList.toggle("need", needI && form.i === null);
-  // Campos extra: inputs fixos, só se mostram/escondem (o texto escrito nunca se perde).
-  $("wWho").classList.toggle("hide", !(k === "delegate" || (form.i === 0 && $("fWho").value.trim())));
-  $("wWhen").classList.toggle("hide", !(form.i === 1 && (k === "schedule" || $("fWhen").value)));
-}
-function openForm(it){
-  editId = it ? it.id : null;
-  $("dlgTitle").textContent = it ? "Editar" : "Nova entrada";
-  $("fTitle").value = it?.title || "";
-  $("fDate").value = it?.date || "";
-  $("fGoal").value = it?.goal || "";
-  $("fWho").value = it?.who || "";
-  $("fWhen").value = it?.when || "";
-  form = it ? {u:it.u ? 1 : 0, i:it.i ? 1 : 0, um:isManual(it)} : {u:0, i:null, um:false};
-  needI = false;
-  $("fDelete").classList.toggle("hide", !it);
-  refreshForm();
-  $("dlg").showModal();
-  $("dlg").scrollTop = 0;
-  snap = formState();
-  // Ao editar não abrir o teclado: foco no título do painel.
-  if(it) $("dlgTitle").focus(); else setTimeout(() => $("fTitle").focus(), 50);
-}
-function tryCloseForm(){
-  if(formState() !== snap && !confirm("Descartar as alterações?")) return;
-  closeDlg($("dlg"));
-}
-$("btnAdd").onclick = () => openForm(null);
-$("fCancel").onclick = tryCloseForm;
-$("dlg").addEventListener("cancel", e => { e.preventDefault(); tryCloseForm(); });
-$("dlg").addEventListener("click", e => { if(e.target === $("dlg")) tryCloseForm(); }); // toque no fundo escuro
-$("segU").addEventListener("click", e => { const b = e.target.closest("button"); if(!b) return; form.u = +b.dataset.v; form.um = true; refreshForm(); });
-$("segI").addEventListener("click", e => { const b = e.target.closest("button"); if(!b) return; form.i = +b.dataset.v; refreshForm(); });
-$("uAuto").onclick = () => { form.um = false; refreshForm(); };
-for(const ev of ["input", "change"]){
-  $("fDate").addEventListener(ev, () => { form.um = false; refreshForm(); }); // mudar a data volta ao automático
-  $("fWhen").addEventListener(ev, refreshForm);
-}
-
-$("form").addEventListener("submit", e => {
-  e.preventDefault();
-  const title = $("fTitle").value.trim();
-  if(!title){ $("fTitle").value = ""; $("fTitle").reportValidity(); return; }
-  if(form.i === null){ needI = true; refreshForm(); $("segI").scrollIntoView({block:"center", behavior:"smooth"}); return; }
-  const r = formUrg(), now = Date.now();
-  const data = {
-    title, date:$("fDate").value || "", goal:$("fGoal").value.trim(),
-    u: form.um ? form.u : r.u, um: form.um, i: form.i,
-    who: form.i === 0 ? $("fWho").value.trim() : "",
-    when: form.i === 1 ? $("fWhen").value || "" : "",
-    upd: now
+  const input = el('textarea', { placeholder: 'Escreva uma nota…', maxlength: '2000', rows: '2' });
+  const err = el('div', { class: 'err' });
+  const add = () => {
+    if (!input.value.trim()) { err.textContent = 'Escreva alguma coisa primeiro.'; return; }
+    run(window.api.addNote(t.id, input.value));
   };
-  const ix = editId ? state.items.findIndex(x => x.id === editId) : -1;
-  if(ix >= 0 && !state.items[ix].deleted) Object.assign(state.items[ix], data);
-  else state.items.push(Object.assign({id:editId || uid(), created:now, done:false}, data));
-  save(); render(); closeDlg($("dlg"));
-});
-$("fDelete").onclick = () => {
-  if(!editId || !confirm("Apagar esta entrada?")) return;
-  const ix = state.items.findIndex(x => x.id === editId);
-  if(ix >= 0) state.items[ix] = {id:editId, deleted:true, upd:Date.now()};
-  save(); render(); closeDlg($("dlg"));
-};
+  input.addEventListener('input', () => { err.textContent = ''; });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) add(); });
 
-/* ---------- definições ---------- */
-let daysDirty = false;
-function showDays(){ if(!daysDirty) $("sDays").value = state.days; }
-function openMenu(){
-  daysDirty = false; showDays();
-  $("sBadge").checked = !!prefs.badge;
-  fillGh(); setFoot();
-  $("dlgMenu").showModal();
-  $("mTitle").focus();
-}
-function applyDays(){
-  if(!daysDirty) return; // só aplica o que o utilizador escreveu (não um valor antigo no campo)
-  daysDirty = false;
-  const v = $("sDays").value.trim(), n = v === "" ? NaN : Number(v); // campo vazio não é 0
-  if(!validDays(n)){ $("sDays").value = state.days; toast("Usa um número entre 0 e 365"); return; }
-  if(n !== state.days){ state.days = n; state.daysUpd = Date.now(); save(); render(); }
-}
-$("btnMenu").onclick = openMenu;
-$("bClose").onclick = () => closeDlg($("dlgMenu"));
-$("sDays").addEventListener("input", () => { daysDirty = true; });
-$("sDays").addEventListener("change", applyDays);
-$("dlgMenu").addEventListener("close", applyDays); // Esc / voltar também guardam
-$("dlgMenu").addEventListener("click", e => { if(e.target === $("dlgMenu")) closeDlg($("dlgMenu")); });
-if("setAppBadge" in navigator) $("wBadge").classList.remove("hide");
-$("sBadge").onchange = async () => {
-  prefs.badge = $("sBadge").checked; savePrefs();
-  if(prefs.badge && "Notification" in window && Notification.permission === "default"){
-    try{ await Notification.requestPermission(); }catch(e){}
+  const notes = el('div');
+  if (!t.notes.length) notes.append(el('div', { class: 'meta' }, 'Ainda sem notas.'));
+  for (const n of t.notes) {
+    notes.append(el('div', { class: 'note' },
+      el('div', { class: 't' }, n.text, el('small', {}, fmt(n.ts))),
+      el('button', { class: 'icon danger', 'aria-label': 'Apagar nota', title: 'Apagar nota', onclick: () => run(window.api.delNote(t.id, n.id)) }, '✕')));
   }
-  render();
-};
-$("bExport").onclick = async () => {
-  const name = "alvo-" + localISO() + ".json";
-  const data = {v:1, days:state.days, daysUpd:state.daysUpd, items:state.items.filter(x => !x.deleted)};
-  const file = new File([JSON.stringify(data, null, 2)], name, {type:"application/json"});
-  // No telemóvel (sobretudo iPhone com a app instalada) a partilha é mais fiável do que descarregar.
-  if(matchMedia("(pointer:coarse)").matches && navigator.canShare?.({files:[file]})){
-    try{ await navigator.share({files:[file], title:"Alvo — cópia"}); return; }
-    catch(err){ if(err.name === "AbortError") return; }
-  }
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(file); a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-};
-$("bImport").onclick = () => $("fileIn").click();
-$("fileIn").onchange = async e => {
-  const f = e.target.files[0]; e.target.value = ""; if(!f) return;
-  let s;
-  try{ s = JSON.parse(await f.text()); }catch(err){ toast("Ficheiro inválido (não é JSON)"); return; }
-  if(!s || !Array.isArray(s.items)){ toast("Ficheiro inválido: não tem lista de tarefas"); return; }
-  const incoming = cleanList(s.items).filter(x => !x.deleted);
-  if(!confirm(`Substituir os dados atuais pelas ${incoming.length} entradas da cópia importada?`)) return;
-  const now = Date.now();
-  incoming.forEach(x => x.upd = now);
-  const ids = new Set(incoming.map(x => x.id));
-  const gone = state.items.filter(x => !ids.has(x.id)).map(x => ({id:x.id, deleted:true, upd:now}));
-  state.items = [...incoming, ...gone];
-  if(validDays(s.days)){ state.days = s.days; state.daysUpd = now; }
-  save(); render(); closeDlg($("dlgMenu"));
-  toast(`Importado: ${incoming.length} entradas`);
-};
 
-/* ---------- sincronização GitHub ---------- */
-let gh = (() => { try{ return JSON.parse(localStorage.getItem(GK)) || {}; }catch(e){ return {}; } })();
-const ghOn = () => !!(gh.repo && gh.token);
-let syncing = false, again = false, timer = null;
-function saveGh(){ try{ localStorage.setItem(GK, JSON.stringify(gh)); }catch(e){} }
-const enc = s => btoa(unescape(encodeURIComponent(s)));
-const dec = s => decodeURIComponent(escape(atob(s.replace(/\s/g, ""))));
-function setFoot(){
-  $("mFoot").textContent = ghOn()
-    ? `Sincronizado com o GitHub (${gh.repo}). "Exportar cópia" guarda um ficheiro extra de segurança.`
-    : `Os dados ficam só neste dispositivo. Liga o GitHub acima ou usa "Exportar cópia" para teres uma cópia de segurança.`;
+  $view.append(
+    el('h2', {}, t.name), chips, ...info,
+    el('h3', {}, 'Notas'), notes,
+    el('div', { style: 'margin-top:8px' }, input, err, el('button', { onclick: add }, 'Adicionar nota')),
+    el('div', { class: 'row', style: 'margin-top:16px' },
+      archived
+        ? el('button', { class: 'primary', style: 'flex:1', onclick: () => { view = { name: 'list' }; run(window.api.restore(t.id)); } }, 'Restaurar')
+        : [el('button', { style: 'flex:1', onclick: () => openForm(t) }, 'Editar'),
+           el('button', { class: 'danger', style: 'flex:1', onclick: () => { view = { name: 'list' }; run(window.api.archive(t.id)); } }, 'Apagar')]));
 }
-function setStatus(st, msg){
-  const b = $("btnSync");
-  b.className = "iconbtn " + (st === "ok" ? "ok" : st === "err" ? "bad" : "");
-  b.textContent = st === "busy" ? "⟳" : st === "ok" ? "☁✓" : st === "err" ? "☁!" : "☁";
-  b.title = msg || "";
-  b.setAttribute("aria-label", "Sincronizar" + (msg ? " — " + msg : ""));
-  const g = $("gMsg");
-  g.textContent = st === "off" ? "Não ligado." : (msg || "");
-  g.className = "hint " + (st === "err" ? "bad" : st === "ok" ? "ok" : "");
-  setFoot();
-}
-function errMsg(code){
-  return code === 401 ? "Token inválido ou expirado"
-       : code === 403 ? "Sem permissão (o token precisa de Contents: Read and write)"
-       : code === 404 ? "Repositório não encontrado ou token sem acesso a ele"
-       : "Erro do GitHub (" + code + ")";
-}
-function api(method, body){
-  const url = "https://api.github.com/repos/" + gh.repo + "/contents/" + encodeURI(gh.path || "tasks.json");
-  return fetch(url + (method === "GET" ? "?t=" + Date.now() : ""), {
-    method, cache:"no-store",
-    headers:{Authorization:"Bearer " + gh.token, Accept:"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28"},
-    body: body ? JSON.stringify(body) : undefined
-  });
-}
-function parseRemote(text){
-  const j = JSON.parse(text);
-  return {items: cleanList(j && j.items), days: validDays(j?.days) ? j.days : null, daysUpd: num(j?.daysUpd)};
-}
-function scheduleSync(){ if(!ghOn()) return; clearTimeout(timer); timer = setTimeout(sync, 1200); }
-async function sync(){
-  if(!ghOn()){ setStatus("off"); return; }
-  if(syncing){ again = true; return; }
-  if(!navigator.onLine){ setStatus("err", "Sem rede. Fica guardado neste dispositivo."); return; }
-  syncing = true; setStatus("busy", "A sincronizar…");
-  try{
-    if(housekeep(true)) render();
-    let done = false;
-    for(let n = 0; n < 3 && !done; n++){
-      const r = await api("GET");
-      let sha = null, remote = {items:[], days:null, daysUpd:0};
-      if(r.status === 200){
-        const j = await r.json(); sha = j.sha;
-        try{ remote = parseRemote(dec(j.content || "")); }
-        catch(e){ throw new Error("O ficheiro no GitHub não é JSON válido — corrige-o ou muda o nome do ficheiro"); }
-      } else if(r.status !== 404) throw new Error(errMsg(r.status));
-      const items = merge(state.items, remote.items);
-      let days = state.days, daysUpd = state.daysUpd;
-      if(remote.days !== null && remote.daysUpd > daysUpd){ days = remote.days; daysUpd = remote.daysUpd; }
-      if(canon(items) !== canon(state.items) || days !== state.days || daysUpd !== state.daysUpd){
-        state.items = items; state.days = days; state.daysUpd = daysUpd; save(true); render(); showDays();
+
+// ---------- formulário ----------
+function openForm(task) {
+  const editing = !!task;
+  let importance = task ? task.importance : 'baixa';
+
+  const name = el('input', { type: 'text', maxlength: '200', placeholder: 'Ex.: Entregar relatório', value: task ? task.name : '' });
+  const nameErr = el('div', { class: 'err' });
+
+  const bAlta = el('button', { type: 'button', class: 'alta' }, 'Alta');
+  const bBaixa = el('button', { type: 'button', class: 'baixa' }, 'Baixa');
+  const paint = () => {
+    bAlta.className = 'alta' + (importance === 'alta' ? ' on' : '');
+    bBaixa.className = 'baixa' + (importance === 'baixa' ? ' on' : '');
+    bAlta.setAttribute('aria-pressed', importance === 'alta');
+    bBaixa.setAttribute('aria-pressed', importance === 'baixa');
+  };
+  bAlta.onclick = () => { importance = 'alta'; paint(); };
+  bBaixa.onclick = () => { importance = 'baixa'; paint(); };
+  paint();
+
+  const due = el('input', { type: 'datetime-local', value: task && task.due !== null ? toInput(task.due) : '' });
+  const dueErr = el('div', { class: 'err' });
+
+  // Avisos antes da data
+  const alertsBox = el('div');
+  const addAlertRow = (a) => {
+    const amount = el('input', { type: 'number', min: '1', step: '1', value: String(a.amount), style: 'flex:0 0 72px' });
+    const unit = el('select', {}, ...[['min', 'minutos'], ['h', 'horas'], ['d', 'dias']].map(([v, l]) => el('option', { value: v }, l)));
+    unit.value = a.unit;
+    const rm = el('button', { type: 'button', class: 'icon', 'aria-label': 'Remover aviso' }, '✕');
+    const row = el('div', { class: 'row', style: 'margin-bottom:6px' }, amount, unit, el('span', { style: 'white-space:nowrap;color:var(--muted)' }, 'antes'), rm);
+    row._get = () => ({ amount: Number(amount.value), unit: unit.value });
+    rm.onclick = () => row.remove();
+    alertsBox.append(row);
+  };
+  const alertsSection = el('div', {}, el('label', { class: 'f' }, 'Avisar antes da data limite'), alertsBox,
+    el('button', { type: 'button', onclick: () => addAlertRow({ amount: 1, unit: 'h' }) }, '+ aviso'));
+  (task ? task.alerts : []).forEach(addAlertRow);
+
+  // Repetição sem data
+  const rep = task && task.repeat;
+  const rStart = el('input', { type: 'datetime-local', value: rep ? toInput(rep.startAt) : '' });
+  const rEvery = el('input', { type: 'number', min: '1', step: '1', value: rep ? String(rep.every) : '30' });
+  const rUnit = el('select', {}, ...[['min', 'minutos'], ['h', 'horas']].map(([v, l]) => el('option', { value: v }, l)));
+  rUnit.value = rep && rep.unit !== 'd' ? rep.unit : 'min';
+  const rOn = el('input', { type: 'checkbox', checked: !!rep });
+  const repErr = el('div', { class: 'err' });
+  const repeatSection = el('div', {},
+    el('label', { class: 'f' }, 'Lembrete repetido (sem data limite)'),
+    el('label', { class: 'row', style: 'margin-bottom:6px' }, rOn, 'Ativar lembrete'),
+    el('label', { class: 'f' }, 'A partir de'), rStart,
+    el('label', { class: 'f' }, 'Repetir a cada'), el('div', { class: 'row' }, rEvery, rUnit), repErr);
+
+  const sync = () => {
+    const has = !!due.value;
+    alertsSection.classList.toggle('hidden', !has);
+    repeatSection.classList.toggle('hidden', has);
+  };
+  due.addEventListener('input', () => { dueErr.textContent = ''; sync(); });
+  sync();
+
+  const submit = () => {
+    nameErr.textContent = dueErr.textContent = repErr.textContent = '';
+    if (!name.value.trim()) { nameErr.textContent = 'Escreva um nome.'; name.focus(); return; }
+    const payload = { name: name.value, importance, due: null, alerts: [], repeat: null };
+    if (due.value) {
+      payload.due = fromInput(due.value);
+      if (payload.due === null) { dueErr.textContent = 'Data inválida.'; return; }
+      for (const row of alertsBox.children) {
+        const a = row._get();
+        if (!(a.amount > 0)) { dueErr.textContent = 'Os avisos precisam de um número maior que 0.'; return; }
+        payload.alerts.push(a);
       }
-      if(sha && canon(items) === canon(remote.items) && remote.days === days && remote.daysUpd === daysUpd){ done = true; break; }
-      const p = await api("PUT", {message:"Alvo: atualização", content:enc(JSON.stringify({v:1, days, daysUpd, items}, null, 1)), ...(sha ? {sha} : {})});
-      if(p.ok){ done = true; break; }
-      if(p.status === 409 || p.status === 422) continue;
-      throw new Error(errMsg(p.status));
+    } else if (rOn.checked) {
+      const start = fromInput(rStart.value);
+      const every = Number(rEvery.value);
+      if (start === null) { repErr.textContent = 'Escolha quando o lembrete começa.'; return; }
+      if (!(every > 0)) { repErr.textContent = 'O intervalo tem de ser maior que 0.'; return; }
+      payload.repeat = { startAt: start, every, unit: rUnit.value };
     }
-    if(!done) throw new Error("Conflito repetido. Tenta de novo.");
-    setStatus("ok", "Sincronizado às " + new Date().toLocaleTimeString("pt-PT", {hour:"2-digit", minute:"2-digit"}));
-  }catch(e){
-    setStatus("err", e instanceof TypeError ? "Sem rede. Fica guardado neste dispositivo." : e.message);
-  }finally{
-    syncing = false; if(again){ again = false; setTimeout(sync, 300); }
+    closeModal();
+    run(editing ? window.api.update(task.id, payload) : window.api.add(payload));
+  };
+
+  openModal([
+    el('h2', {}, editing ? 'Editar tarefa' : 'Nova tarefa'),
+    el('label', { class: 'f' }, 'Nome'), name, nameErr,
+    el('label', { class: 'f' }, 'Importância'), el('div', { class: 'seg' }, bAlta, bBaixa),
+    el('label', { class: 'f' }, 'Data limite (opcional)'), due, dueErr,
+    alertsSection, repeatSection,
+    el('div', { class: 'row', style: 'margin-top:14px' },
+      el('button', { style: 'flex:1', onclick: closeModal }, 'Cancelar'),
+      el('button', { class: 'primary', style: 'flex:1', onclick: submit }, 'Guardar'))
+  ]);
+  name.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  name.addEventListener('input', () => { nameErr.textContent = ''; });
+  name.focus();
+}
+
+// ---------- definições ----------
+function syncSection() {
+  const box = el('div');
+  const draw = () => {
+    const i = syncInfo;
+    box.replaceChildren();
+    if (i.configured) {
+      box.append(
+        el('div', { class: 'meta', style: 'color:var(--text)' }, `Ligado a ${i.repo}` + (i.path !== 'tarefas.json' ? ` (${i.path})` : '')),
+        el('div', { class: 'meta ' + (i.status === 'error' || i.status === 'offline' ? 'sync-err' : i.status === 'ok' ? 'sync-ok' : ''), style: 'margin:4px 0 8px;font-size:12px' }, syncText(i)),
+        el('div', { class: 'row' },
+          el('button', { style: 'flex:1', onclick: async () => { syncInfo = await window.api.syncNow(); draw(); updateCloud(); } }, 'Sincronizar agora'),
+          el('button', { class: 'danger', style: 'flex:1', onclick: async () => { syncInfo = await window.api.syncOff(); cloudBtn = null; draw(); run(window.api.list()); } }, 'Desligar')));
+      return;
+    }
+    const repo = el('input', { type: 'text', value: DEFAULT_REPO, placeholder: 'utilizador/repositório', autocomplete: 'off', spellcheck: 'false' });
+    const token = el('input', { type: 'password', placeholder: 'github_pat_…', autocomplete: 'off' });
+    const path = el('input', { type: 'text', placeholder: 'tarefas.json', autocomplete: 'off' });
+    const err = el('div', { class: 'err' });
+    const go = el('button', { class: 'primary big' }, 'Ligar');
+    go.onclick = async () => {
+      err.textContent = '';
+      if (!repo.value.trim()) { err.textContent = 'Indique o repositório.'; return; }
+      if (!token.value.trim()) { err.textContent = 'Cole o token do GitHub.'; return; }
+      go.disabled = true;
+      go.textContent = 'A verificar…';
+      const r = await window.api.syncSave({ repo: repo.value, token: token.value, path: path.value });
+      go.disabled = false;
+      go.textContent = 'Ligar';
+      if (!r.ok) { err.textContent = r.error; return; }
+      syncInfo = r;
+      token.value = '';
+      draw();
+      toast('Ligado ao GitHub');
+    };
+    box.append(
+      el('label', { class: 'f', style: 'margin-top:0' }, 'Repositório (privado)'), repo,
+      el('label', { class: 'f' }, 'Token (fine-grained, Contents: leitura e escrita)'), token,
+      el('label', { class: 'f' }, 'Ficheiro (opcional)'), path,
+      err, go,
+      el('div', { class: 'meta', style: 'font-size:12px;color:var(--muted);margin-top:6px' }, 'O token fica guardado cifrado neste computador.'));
+  };
+  syncRedraw = draw;
+  draw();
+  return box;
+}
+
+function notifPermRow() {
+  const st = window.api.notifState();
+  if (st === 'granted') {
+    return el('div', { class: 'meta', style: 'font-size:12px;color:var(--muted);margin-bottom:8px' },
+      'Permissão deste dispositivo: ativa. Os avisos chegam com a app aberta ou em segundo plano (o sistema pode suspendê-la).');
   }
+  const msg = st === 'unsupported' ? 'Este navegador não suporta notificações.'
+    : st === 'denied' ? 'Bloqueadas neste dispositivo. Ative-as nas definições do sistema.'
+    : 'Falta permitir as notificações neste dispositivo.';
+  const row = el('div', { style: 'margin:4px 0 8px' }, el('div', { class: 'meta', style: 'font-size:12px;color:var(--muted);margin-bottom:6px' }, msg));
+  if (st === 'default') {
+    row.append(el('button', { onclick: async () => { await window.api.requestNotifications(); closeModal(); openSettings(); } }, 'Permitir notificações'));
+  }
+  return row;
 }
-function fillGh(){
-  $("gRepo").value = gh.repo || ""; $("gPath").value = gh.path || ""; $("gToken").value = "";
-  $("gToken").placeholder = gh.token ? "•••• guardado (vazio = manter)" : "github_pat_…";
-}
-$("gSave").onclick = () => {
-  const repo = $("gRepo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/+$/, "");
-  const token = $("gToken").value.trim() || gh.token || "";
-  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){ setStatus("err", "Repositório no formato utilizador/nome"); return; }
-  if(!token){ setStatus("err", "Falta o token"); return; }
-  gh = {repo, path:$("gPath").value.trim().replace(/^\/+/, "") || "tasks.json", token};
-  saveGh(); fillGh(); sync();
-};
-$("gOff").onclick = () => { gh = {}; saveGh(); setStatus("off"); fillGh(); };
-$("btnSync").onclick = () => { if(ghOn()) sync(); else openMenu(); };
 
-/* ---------- arranque e atualização diária ---------- */
-let lastDay = today().getTime();
-function tick(){ lastDay = today().getTime(); housekeep(); render(); }
-document.addEventListener("visibilitychange", () => { if(!document.hidden){ tick(); sync(); } });
-setInterval(() => { if(today().getTime() !== lastDay) tick(); }, 60e3); // passa a meia-noite com a app aberta
-addEventListener("online", () => sync());
-
-housekeep();
-render();
-setStatus("off");
-if(ghOn()) sync();
-if("serviceWorker" in navigator){
-  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+function openSettings() {
+  const s = data.settings;
+  const sw = (label, key) => el('label', { class: 'switch' }, label,
+    el('input', { type: 'checkbox', checked: !!s[key], onchange: e => run(window.api.settings({ [key]: e.target.checked })) }));
+  openModal([
+    el('h2', {}, 'Definições'),
+    sw('Notificações', 'notifications'),
+    ...(window.api.isPwa ? [notifPermRow()] : [sw('Manter sempre por cima', 'alwaysOnTop'), sw('Iniciar com o Windows', 'autoStart')]),
+    el('h3', {}, 'Sincronização GitHub'),
+    syncSection(),
+    el('h3', {}, 'Dados (CSV)'),
+    el('div', { class: 'row' },
+      el('button', { style: 'flex:1', onclick: async () => {
+        const r = await window.api.exportCsv();
+        if (r.ok) toast(`${r.count} tarefas exportadas`);
+      } }, 'Exportar'),
+      el('button', { style: 'flex:1', onclick: async () => {
+        const r = await window.api.importCsv();
+        if (r.error) toast(r.error);
+        else if (r.ok) { toast(`${r.added} importadas, ${r.skipped} ignoradas`); closeModal(); run(window.api.list()); }
+      } }, 'Importar')),
+    el('div', { class: 'meta', style: 'margin-top:6px;color:var(--muted);font-size:12px' }, 'Inclui as tarefas ativas e o arquivo. Abre no Excel.'),
+    el('button', { class: 'big', style: 'margin-top:14px', onclick: closeModal }, 'Fechar')
+  ]);
 }
+
+// ---------- arranque ----------
+window.api.onChanged(() => run(window.api.list()));
+window.api.syncStatus().then(i => { syncInfo = i; if (view.name === 'list' && $modal.classList.contains('hidden')) render(); });
+window.api.onSyncStatus(i => {
+  const was = syncInfo.configured;
+  syncInfo = i;
+  if (was !== i.configured && view.name === 'list' && $modal.classList.contains('hidden')) render();
+  updateCloud();
+  if (syncRedraw) syncRedraw();
+});
+let sig = '';
+const signature = () => data.active.map(t => t.id + urgent(t) + (t.due !== null && t.due < Date.now())).join();
+const origRender = render;
+render = function () { sig = signature(); origRender(); };
+setInterval(() => {
+  if (view.name === 'list' && $modal.classList.contains('hidden') && signature() !== sig) render();
+}, 30000);
+run(window.api.list());
