@@ -2,6 +2,7 @@
 
 const $view = document.getElementById('view');
 const $top = document.getElementById('top');
+const $bottom = document.getElementById('bottom');
 const $modal = document.getElementById('modal');
 const $toast = document.getElementById('toast');
 
@@ -92,6 +93,8 @@ let render = function () {
   if (view.name === 'detail' && !find(view.id)) view = { name: 'list', id: null, search: '' };
   $top.replaceChildren();
   $view.replaceChildren();
+  $bottom.replaceChildren();
+  $bottom.classList.add('hidden');
   if (view.name === 'list') renderList();
   else if (view.name === 'archive') renderArchive();
   else renderDetail();
@@ -142,7 +145,8 @@ function renderList() {
     );
     $view.append(row);
   }
-  $view.append(el('button', { class: 'primary big', onclick: () => openForm(null) }, '+ Nova tarefa'));
+  $bottom.classList.remove('hidden');
+  $bottom.append(el('button', { class: 'primary big', onclick: () => openForm(null) }, '+ Nova tarefa'));
 }
 
 function renderArchive() {
